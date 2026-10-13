@@ -1,0 +1,52 @@
+# ============================================================
+# jianqie —— 只提交源代码，构建产物和本地配置都不进仓库
+# ============================================================
+
+# ---------- 构建产物 ----------
+cmake-build-*/
+build/
+out/
+cmake-build-*.dir/
+
+# ---------- 编译中间文件 ----------
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.so
+*.dylib
+
+# ---------- Qt 自动生成 ----------
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*_autogen/
+*.qmlc
+*.jsc
+
+# ---------- IDE / 编辑器 ----------
+# .idea 里 workspace.xml、editor.xml 会写进本机绝对路径，整个目录直接不收
+.idea/
+.vscode/
+*.user
+*.autosave
+*.swp
+
+# ---------- 运行期数据 ----------
+# 剪切板历史本来在 %APPDATA%/jianqie/jianqie 下。
+# 这里防的是调试时不小心把数据目录指到项目里，别把历史记录传上去。
+/history.db
+/history.db-journal
+/history.db-wal
+/history.db-shm
+/images/
+
+# ---------- 系统垃圾 ----------
+Thumbs.db
+Desktop.ini
+.DS_Store

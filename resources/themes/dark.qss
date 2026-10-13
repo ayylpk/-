@@ -1,0 +1,248 @@
+/* jianqie - 深色主题 */
+
+QWidget {
+    font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #e6edf3;
+}
+
+QLabel#SectionHint {
+    color: #8b949e;
+    font-size: 12px;
+}
+
+/* ---------- 列表窗口 ---------- */
+
+/* 窗口的底色和边框不在这里 —— 由 MainWindow::paintEvent 直接画。
+   之前放在 QSS 里、配合半透明窗口时压根没画出来，整个窗口是透的。
+   这里只负责窗口内部子控件的样式。 */
+
+/* 勾选栏做成透明的：这样窗口背景不透明度调低时，
+   整块区域会一起变透，不会留下一条突兀的实心条。 */
+#MarkBar {
+    background-color: transparent;
+    border-top: 1px solid #30363d;
+}
+
+#MarkLabel {
+    color: #8b949e;
+    font-size: 12px;
+}
+
+#ListHeader {
+    color: #8b949e;
+    font-size: 12px;
+    padding: 8px 12px 4px 12px;
+}
+
+#ListHint {
+    color: #6e7681;
+    font-size: 11px;
+    padding: 4px 12px 8px 12px;
+}
+
+#HistoryList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+}
+
+#HistoryList::item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    color: #e6edf3;
+}
+
+#HistoryList::item:hover {
+    background-color: #262c34;
+}
+
+#HistoryList::item:selected {
+    background-color: #14385c;
+    border: 1px solid #1f6feb;
+    color: #cae3ff;
+}
+
+/* ---------- 设置窗口 ---------- */
+
+#SettingsWindow {
+    background-color: #161b22;
+}
+
+#SettingsTitle {
+    font-size: 17px;
+    font-weight: 500;
+    padding: 4px 2px 2px 2px;
+}
+
+QGroupBox {
+    background-color: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    margin-top: 16px;
+    padding: 12px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 4px;
+    color: #8b949e;
+    font-weight: 500;
+}
+
+/* ---------- 通用控件 ---------- */
+
+QPushButton {
+    background-color: #262c34;
+    border: 1px solid #3d444d;
+    border-radius: 6px;
+    padding: 5px 14px;
+    min-height: 18px;
+    color: #e6edf3;
+}
+
+QPushButton:hover {
+    background-color: #303740;
+}
+
+QPushButton:pressed {
+    background-color: #1c2128;
+}
+
+QPushButton:disabled {
+    color: #6e7681;
+    background-color: #1c2128;
+}
+
+QPushButton#DangerButton {
+    color: #ff9a91;
+    border-color: #6b2b26;
+}
+
+QPushButton#DangerButton:hover {
+    background-color: #3a1f1d;
+}
+
+QComboBox, QSpinBox, QLineEdit, QKeySequenceEdit {
+    background-color: #0d1117;
+    border: 1px solid #3d444d;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 20px;
+    color: #e6edf3;
+    selection-background-color: #1f6feb;
+    selection-color: #ffffff;
+}
+
+QComboBox:focus, QSpinBox:focus, QLineEdit:focus, QKeySequenceEdit:focus {
+    border: 1px solid #1f6feb;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    selection-background-color: #14385c;
+    selection-color: #cae3ff;
+    outline: none;
+}
+
+QCheckBox {
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 15px;
+    height: 15px;
+    border: 1px solid #3d444d;
+    border-radius: 4px;
+    background-color: #0d1117;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #1f6feb;
+    border-color: #1f6feb;
+}
+
+/* ---------- 滚动条 ---------- */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3d444d;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #545d68;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #3d444d;
+    border-radius: 4px;
+    min-width: 24px;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+    width: 0px;
+}
+
+/* ---------- 菜单 / 提示 ---------- */
+
+QMenu {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 5px;
+}
+
+/* 左右留白给足，尤其是右边 —— 之前 22px 太挤，菜单看着又窄又憋 */
+QMenu::item {
+    padding: 7px 40px 7px 16px;
+    border-radius: 4px;
+    min-width: 80px;
+}
+
+QMenu::item:selected {
+    background-color: #14385c;
+    color: #cae3ff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #30363d;
+    margin: 4px 8px;
+}
+
+QToolTip {
+    background-color: #30363d;
+    color: #e6edf3;
+    border: none;
+    padding: 4px 6px;
+}
