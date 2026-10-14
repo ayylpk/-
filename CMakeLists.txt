@@ -46,16 +46,15 @@ set(JIANQIE_SOURCES
         src/ui/ClipboardItemDelegate.cpp
         src/ui/MainWindow.h
         src/ui/MainWindow.cpp
+        src/ui/ImageFloatWindow.h
+        src/ui/ImageFloatWindow.cpp
         src/ui/SettingsWindow.h
         src/ui/SettingsWindow.cpp
 
         resources/resources.qrc
-        src/app/Application.cpp
-        src/app/Application.cpp
 )
 
-add_executable(jianqie ${JIANQIE_SOURCES}
-        src/app/Application.cpp)
+add_executable(jianqie ${JIANQIE_SOURCES})
 
 if (NOT JIANQIE_CONSOLE)
     set_target_properties(jianqie PROPERTIES WIN32_EXECUTABLE TRUE)

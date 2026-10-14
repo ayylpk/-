@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QObject>
 #include <QPixmap>
+#include <QSize>
 #include <QSqlDatabase>
 #include <QString>
 #include <QVector>
@@ -47,8 +48,11 @@ public:
     int removeItems(const QVector<qint64> &ids);
     void clearAll(bool keepPinned);
 
-    /*! 缩略图，按 id 缓存。第一次调用会去读图片文件。 */
-    QPixmap thumbnail(const ClipboardItem &item, int height);
+    /*!
+     * 缩略图，按 (id + 目标尺寸) 缓存。
+     * size 是调用方按宽高比算好的目标尺寸，第一次调用会去读图片文件。
+     */
+    QPixmap thumbnail(const ClipboardItem &item, const QSize &size);
 
     QString imageAbsolutePath(const ClipboardItem &item) const;
 
@@ -69,6 +73,11 @@ private:
     bool ensureSchema();
     bool loadAll();
     void enforceCapacity();
+    /*! 老库升级用：表里有没有这一列。 */
+    bool hasColumn(const QString &table, const QString &column) const;
+
+    /*! 把某条记录的所有尺寸缩略图缓存都清掉（记录被删时用）。 */
+    void forgetThumbnails(qint64 id);
 
     /*! 返回最后一个可以淘汰的下标，全被置顶时返回 -1。 */
     int lastEvictableIndex() const;
@@ -94,7 +103,8 @@ private:
     QString m_databasePath;
 
     QVector<ClipboardItem> m_items;
-    QHash<qint64, QPixmap> m_thumbnailCache;
+    /*! key 是 "id@宽x高"，因为同一张图在不同设置下会有不同尺寸的缩略图。 */
+    QHash<QString, QPixmap> m_thumbnailCache;
     int m_maxItems = 200;
     bool m_opened = false;
 };

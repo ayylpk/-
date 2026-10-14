@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QCursor>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -15,10 +16,13 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <utility>
+
 #include "core/ClipboardMonitor.h"
 #include "core/GlobalHotkey.h"
 #include "core/SettingsStore.h"
 #include "core/StorageManager.h"
+#include "ui/ImageFloatWindow.h"
 #include "ui/MainWindow.h"
 #include "ui/SettingsWindow.h"
 #include "ui/ThemeManager.h"
@@ -46,6 +50,9 @@ const qint64 kHotkeyPasteGuardMs = 350;
 
 const int kTrayIconSize = 64;
 
+// 多张图片浮窗之间的错开量，免得一开就叠在同一个位置
+const int kFloatCascadeStep = 28;
+
 } // namespace
 
 Application::Application(QObject *parent)
@@ -55,6 +62,10 @@ Application::Application(QObject *parent)
 
 Application::~Application()
 {
+    // 浮窗是顶层窗口、没有父对象，得自己收。
+    // 放在销毁托盘之前 —— 收尾里会去刷新托盘菜单。
+    closeAllFloats();
+
     // 托盘图标不显式隐藏的话，退出后可能留一个幽灵图标在托盘里。
     // 顺序要紧：先摘掉菜单引用，再销毁菜单，最后销毁图标。
     if (m_tray) {
@@ -89,6 +100,8 @@ bool Application::start()
 
     m_listWindow = new MainWindow(m_storage, m_settings);
     connect(m_listWindow, &MainWindow::itemActivated, this, &Application::onItemActivated);
+    connect(m_listWindow, &MainWindow::imageFloatRequested,
+            this, &Application::onImageFloatRequested);
     connect(m_listWindow, &MainWindow::settingsRequested, this, &Application::showSettingsWindow);
     connect(m_listWindow, &MainWindow::dataDirRequested, this, &Application::openDataDirectory);
 
@@ -103,6 +116,7 @@ bool Application::start()
     connect(m_monitor, &ClipboardMonitor::imageCaptured, this, &Application::onImageCaptured);
 
     connect(m_settings, &SettingsStore::maxItemsChanged, this, &Application::onMaxItemsChanged);
+    connect(m_settings, &SettingsStore::themeChanged, this, &Application::onThemeChanged);
 
     initHotkey();
     initTray();
@@ -185,6 +199,9 @@ void Application::initTray()
     m_dataDirAction = m_trayMenu->addAction(QStringLiteral("打开数据目录"));
     connect(m_dataDirAction, &QAction::triggered, this, &Application::openDataDirectory);
 
+    m_closeFloatsAction = m_trayMenu->addAction(QStringLiteral("关闭全部浮动图"));
+    connect(m_closeFloatsAction, &QAction::triggered, this, &Application::closeAllFloats);
+
     m_trayMenu->addSeparator();
 
     m_quitAction = m_trayMenu->addAction(QStringLiteral("退出"));
@@ -215,6 +232,15 @@ void Application::updateTrayMenu()
     const QString hotkey = m_settings->hotkey();
     m_showListAction->setText(hotkey.isEmpty() ? QStringLiteral("显示列表")
                                                : QStringLiteral("显示列表 (%1)").arg(hotkey));
+
+    if (m_closeFloatsAction) {
+        const bool hasFloats = !m_floats.isEmpty();
+        m_closeFloatsAction->setEnabled(hasFloats);
+        m_closeFloatsAction->setText(hasFloats
+                                             ? QStringLiteral("关闭全部浮动图 (%1)")
+                                                       .arg(m_floats.size())
+                                             : QStringLiteral("关闭全部浮动图"));
+    }
 
     if (m_tray) {
         m_tray->setToolTip(m_hotkey && m_hotkey->isRegistered()
@@ -311,6 +337,82 @@ void Application::onItemActivated(qint64 id)
         return;
 
     pasteToCursor(*item);
+}
+
+void Application::onImageFloatRequested(qint64 id)
+{
+    if (!m_storage)
+        return;
+
+    // 这张已经浮着就把那张提到最前，别重复开一个
+    const auto existing = m_floats.constFind(id);
+    if (existing != m_floats.constEnd() && existing.value()) {
+        ImageFloatWindow *window = existing.value();
+        window->show();
+        window->raise();
+        window->activateWindow();
+        return;
+    }
+
+    const ClipboardItem *item = findItem(id);
+    if (!item || !item->isImage())
+        return;
+
+    // 浮窗自己持有一份内存副本：这条记录被 FIFO 淘汰、图片文件被删掉之后，
+    // 已经浮在桌面上的那张还得继续显示，不能变空窗。
+    const QImage image(m_storage->imageAbsolutePath(*item));
+    if (image.isNull()) {
+        if (m_tray) {
+            m_tray->showMessage(QStringLiteral("剪切板历史"),
+                                QStringLiteral("这张图片的文件已经找不到了，没法浮起来。"),
+                                QSystemTrayIcon::Warning);
+        }
+        return;
+    }
+
+    const bool dark = m_settings && m_settings->theme() == SettingsStore::Dark;
+    auto *window = new ImageFloatWindow(id, image, dark);
+    connect(window, &ImageFloatWindow::closed, this, &Application::onFloatClosed);
+
+    // 多张依次错开，不然会一张压一张
+    const int step = m_floats.size() * kFloatCascadeStep;
+    window->placeAt(QCursor::pos() + QPoint(step, step));
+
+    m_floats.insert(id, window);
+    window->show();
+    window->raise();
+    window->activateWindow();
+
+    updateTrayMenu();
+}
+
+void Application::onFloatClosed(qint64 itemId)
+{
+    m_floats.remove(itemId);
+    updateTrayMenu();
+}
+
+void Application::closeAllFloats()
+{
+    // close() 会走 WA_DeleteOnClose 释放窗口，同时回调 onFloatClosed 把表里的条目摘掉。
+    // 先把 key 拷一份出来，避免边遍历边改容器。
+    const QList<qint64> ids = m_floats.keys();
+    for (qint64 id : ids) {
+        if (ImageFloatWindow *window = m_floats.value(id))
+            window->close();
+    }
+
+    m_floats.clear();
+    updateTrayMenu();
+}
+
+void Application::onThemeChanged(SettingsStore::Theme theme)
+{
+    const bool dark = (theme == SettingsStore::Dark);
+    for (ImageFloatWindow *window : std::as_const(m_floats)) {
+        if (window)
+            window->setDarkTheme(dark);
+    }
 }
 
 void Application::pasteToCursor(const ClipboardItem &item)

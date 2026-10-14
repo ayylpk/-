@@ -8,6 +8,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSqlRecord>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QUuid>
@@ -31,6 +32,29 @@ QString hashOfImage(const QImage &image)
     const QByteArray raw(reinterpret_cast<const char *>(normalized.constBits()),
                          static_cast<int>(normalized.sizeInBytes()));
     return hashOf(raw);
+}
+
+/*!
+ * 从预览文案 "图片  1920 × 1080" 里把尺寸抠出来。
+ * 只给"补列之前存进去的老图片记录"兜底用 —— 那些行 img_w/img_h 是 0。
+ */
+void parsePreviewSize(const QString &preview, int *width, int *height)
+{
+    static const QRegularExpression pattern(QStringLiteral("(\\d+)\\s*[x×*]\\s*(\\d+)"));
+
+    const QRegularExpressionMatch match = pattern.match(preview);
+    if (!match.hasMatch())
+        return;
+
+    const int w = match.captured(1).toInt();
+    const int h = match.captured(2).toInt();
+    if (w <= 0 || h <= 0)
+        return;
+
+    if (width)
+        *width = w;
+    if (height)
+        *height = h;
 }
 
 } // namespace
@@ -83,6 +107,19 @@ bool StorageManager::open(const QString &dataDir, int maxItems)
     return true;
 }
 
+bool StorageManager::hasColumn(const QString &table, const QString &column) const
+{
+    QSqlQuery query(m_database);
+    if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(table)))
+        return false;
+
+    while (query.next()) {
+        if (query.value(1).toString().compare(column, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
 bool StorageManager::ensureSchema()
 {
     QSqlQuery query(m_database);
@@ -94,10 +131,25 @@ bool StorageManager::ensureSchema()
             "  preview    TEXT    NOT NULL DEFAULT '',"
             "  hash       TEXT    NOT NULL DEFAULT '',"
             "  pinned     INTEGER NOT NULL DEFAULT 0,"
-            "  created_at INTEGER NOT NULL"
+            "  created_at INTEGER NOT NULL,"
+            "  img_w      INTEGER NOT NULL DEFAULT 0,"
+            "  img_h      INTEGER NOT NULL DEFAULT 0"
             ")");
     if (!query.exec(createTable))
         return false;
+
+    // 老库升级：img_w / img_h 是后加的列，得给已经存在的库补上。
+    // 补成 0 不影响功能 —— 读的时候会从 preview 里退回去解析，解析不出来就按默认比例算。
+    if (!hasColumn(QStringLiteral("items"), QStringLiteral("img_w"))) {
+        if (!query.exec(QStringLiteral(
+                "ALTER TABLE items ADD COLUMN img_w INTEGER NOT NULL DEFAULT 0")))
+            return false;
+    }
+    if (!hasColumn(QStringLiteral("items"), QStringLiteral("img_h"))) {
+        if (!query.exec(QStringLiteral(
+                "ALTER TABLE items ADD COLUMN img_h INTEGER NOT NULL DEFAULT 0")))
+            return false;
+    }
 
     // 去重和排序都要用
     if (!query.exec(QStringLiteral(
@@ -115,8 +167,8 @@ bool StorageManager::loadAll()
     QSqlQuery query(m_database);
     // 置顶的排前面，其余按时间倒序
     if (!query.exec(QStringLiteral(
-            "SELECT id, type, content, preview, hash, pinned, created_at FROM items "
-            "ORDER BY pinned DESC, created_at DESC, id DESC"))) {
+            "SELECT id, type, content, preview, hash, pinned, created_at, img_w, img_h "
+            "FROM items ORDER BY pinned DESC, created_at DESC, id DESC"))) {
         return false;
     }
 
@@ -130,6 +182,14 @@ bool StorageManager::loadAll()
         item.hash = query.value(4).toString();
         item.pinned = query.value(5).toInt() != 0;
         item.createdAt = query.value(6).toLongLong();
+        item.imageWidth = query.value(7).toInt();
+        item.imageHeight = query.value(8).toInt();
+
+        // 老库（补列之前存的图片）没有尺寸，从 preview 里退回去解析一次，
+        // 免得这些行按默认比例算出来跟实际差太多。
+        if (item.isImage() && (item.imageWidth <= 0 || item.imageHeight <= 0))
+            parsePreviewSize(item.preview, &item.imageWidth, &item.imageHeight);
+
         m_items.append(item);
     }
 
@@ -320,16 +380,21 @@ qint64 StorageManager::addImage(const QImage &image)
     item.preview = QStringLiteral("图片  %1 × %2").arg(image.width()).arg(image.height());
     item.hash = hash;
     item.createdAt = QDateTime::currentMSecsSinceEpoch();
+    // 尺寸存下来，列表算行高就不用去解码图片了
+    item.imageWidth = image.width();
+    item.imageHeight = image.height();
 
     QSqlQuery insert(m_database);
     insert.prepare(QStringLiteral(
-            "INSERT INTO items (type, content, preview, hash, pinned, created_at) "
-            "VALUES (:type, :content, :preview, :hash, 0, :created)"));
+            "INSERT INTO items (type, content, preview, hash, pinned, created_at, img_w, img_h) "
+            "VALUES (:type, :content, :preview, :hash, 0, :created, :imgW, :imgH)"));
     insert.bindValue(QStringLiteral(":type"), static_cast<int>(ClipboardItem::Image));
     insert.bindValue(QStringLiteral(":content"), item.content);
     insert.bindValue(QStringLiteral(":preview"), item.preview);
     insert.bindValue(QStringLiteral(":hash"), item.hash);
     insert.bindValue(QStringLiteral(":created"), item.createdAt);
+    insert.bindValue(QStringLiteral(":imgW"), item.imageWidth);
+    insert.bindValue(QStringLiteral(":imgH"), item.imageHeight);
     if (!insert.exec()) {
         removeImageFile(relativePath);
         return -1;
@@ -375,6 +440,18 @@ bool StorageManager::setPinned(qint64 id, bool pinned)
     return true;
 }
 
+void StorageManager::forgetThumbnails(qint64 id)
+{
+    const QString prefix = QString::number(id) + QLatin1Char('@');
+
+    for (auto it = m_thumbnailCache.begin(); it != m_thumbnailCache.end();) {
+        if (it.key().startsWith(prefix))
+            it = m_thumbnailCache.erase(it);
+        else
+            ++it;
+    }
+}
+
 bool StorageManager::dropItemAt(int index, bool deleteImage)
 {
     if (index < 0 || index >= m_items.size())
@@ -391,7 +468,7 @@ bool StorageManager::dropItemAt(int index, bool deleteImage)
     if (deleteImage)
         removeImageFile(item.content);
 
-    m_thumbnailCache.remove(item.id);
+    forgetThumbnails(item.id);
     m_items.removeAt(index);
     emit itemRemoved(item.id);
     return true;
@@ -434,7 +511,7 @@ int StorageManager::removeItems(const QVector<qint64> &ids)
         if (item.type == ClipboardItem::Image)
             removeImageFile(item.content);
 
-        m_thumbnailCache.remove(item.id);
+        forgetThumbnails(item.id);
         m_items.removeAt(i);
         ++removed;
     }
@@ -494,25 +571,34 @@ void StorageManager::clearAll(bool keepPinned)
     emit resetPerformed();
 }
 
-QPixmap StorageManager::thumbnail(const ClipboardItem &item, int height)
+QPixmap StorageManager::thumbnail(const ClipboardItem &item, const QSize &size)
 {
-    if (!item.isImage())
+    if (!item.isImage() || size.isEmpty() || size.width() <= 0 || size.height() <= 0)
         return QPixmap();
 
-    const auto cached = m_thumbnailCache.constFind(item.id);
-    if (cached != m_thumbnailCache.constEnd()) {
-        if (cached.value().height() == height)
-            return cached.value();
+    // 同一张图在不同设置/不同窗口宽度下会有不同尺寸的缩略图，所以 key 得带上尺寸
+    const QString key = QStringLiteral("%1@%2x%3")
+                                .arg(item.id)
+                                .arg(size.width())
+                                .arg(size.height());
 
-        // 缩略图尺寸改过，重新生成
-        m_thumbnailCache.remove(item.id);
-    }
+    const auto cached = m_thumbnailCache.constFind(key);
+    if (cached != m_thumbnailCache.constEnd())
+        return cached.value();
 
-    QPixmap pixmap(imageAbsolutePath(item));
-    if (pixmap.isNull())
+    QPixmap original(imageAbsolutePath(item));
+    if (original.isNull())
         return QPixmap();
 
-    const QPixmap scaled = pixmap.scaledToHeight(qMax(16, height), Qt::SmoothTransformation);
-    m_thumbnailCache.insert(item.id, scaled);
+    // 不放大：算出的是显示尺寸，比原图大就直接用原图，免得糊
+    QPixmap scaled = original;
+    if (original.width() > size.width() || original.height() > size.height())
+        scaled = original.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    // 尺寸设置改了会不断产生新 key，加个上限免得越攒越多
+    if (m_thumbnailCache.size() > 400)
+        m_thumbnailCache.clear();
+
+    m_thumbnailCache.insert(key, scaled);
     return scaled;
 }

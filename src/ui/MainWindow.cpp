@@ -30,6 +30,9 @@ namespace {
 // 弹窗和屏幕边缘保持的距离
 const int kScreenMargin = 8;
 
+// 窗口内容四周的留白（边框画在最外圈，内容缩进来一点）
+const int kWindowPadding = 6;
+
 } // namespace
 
 MainWindow::MainWindow(StorageManager *storage, SettingsStore *settings, QWidget *parent)
@@ -82,11 +85,11 @@ MainWindow::MainWindow(StorageManager *storage, SettingsStore *settings, QWidget
 void MainWindow::buildUi()
 {
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(6, 6, 6, 6);
+    root->setContentsMargins(kWindowPadding, kWindowPadding, kWindowPadding, kWindowPadding);
     root->setSpacing(0);
 
     auto *topBar = new QHBoxLayout;
-    topBar->setContentsMargins(6, 2, 6, 0);
+    topBar->setContentsMargins(kWindowPadding, 2, kWindowPadding, 0);
     topBar->setSpacing(6);
 
     m_header = new QLabel(this);
@@ -146,14 +149,57 @@ void MainWindow::buildUi()
     markLayout->addWidget(m_deleteMarkedButton, 0);
     m_markBar->setVisible(false);
 
-    m_hint = new QLabel(this);
-    m_hint->setObjectName(QStringLiteral("ListHint"));
-    m_hint->setText(QStringLiteral("回车 / 空格 / 点击 使用    Ctrl+点击 或 Ctrl+空格 勾选    P 置顶    Del 删除    Esc 关闭"));
+    // 列表为空时铺在整个列表区上的一句引导（跟着 viewport 一起改大小，见 eventFilter）
+    m_emptyLabel = new QLabel(m_list->viewport());
+    m_emptyLabel->setObjectName(QStringLiteral("EmptyHint"));
+    m_emptyLabel->setAlignment(Qt::AlignCenter);
+    m_emptyLabel->setWordWrap(true);
+    m_emptyLabel->setText(QStringLiteral("还没有记录\n复制点什么就会出现在这里"));
+    // 别把鼠标事件吃掉：那一块还要能用来拖动窗口
+    m_emptyLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_emptyLabel->setGeometry(m_list->viewport()->rect());
+    m_emptyLabel->hide();
+
+    // 底部提示做成键帽，扫一眼就知道按什么键
+    auto *hintBar = new QWidget(this);
+    hintBar->setObjectName(QStringLiteral("HintBar"));
+    auto *hintLayout = new QHBoxLayout(hintBar);
+    hintLayout->setContentsMargins(kWindowPadding, 2, kWindowPadding, 8);
+    hintLayout->setSpacing(6);
+
+    auto addKey = [hintBar, hintLayout](const QString &key, const QString &desc,
+                                        const QString &tooltip) {
+        auto *cap = new QLabel(key, hintBar);
+        cap->setObjectName(QStringLiteral("KeyCap"));
+        auto *text = new QLabel(desc, hintBar);
+        text->setObjectName(QStringLiteral("KeyDesc"));
+
+        if (!tooltip.isEmpty()) {
+            cap->setToolTip(tooltip);
+            text->setToolTip(tooltip);
+        }
+
+        hintLayout->addWidget(cap, 0);
+        hintLayout->addWidget(text, 0);
+    };
+
+    addKey(QStringLiteral("Enter"), QStringLiteral("使用"),
+           QStringLiteral("空格同义：都是把这条送回光标处，用完自动收窗"));
+    hintLayout->addSpacing(10);
+    addKey(QStringLiteral("Ctrl+点击"), QStringLiteral("勾选"),
+           QStringLiteral("也可以按 Ctrl+空格，或右键菜单里选「勾选」"));
+    hintLayout->addSpacing(10);
+    addKey(QStringLiteral("P"), QStringLiteral("置顶"), QString());
+    hintLayout->addSpacing(10);
+    addKey(QStringLiteral("Del"), QStringLiteral("删除"), QString());
+    hintLayout->addSpacing(10);
+    addKey(QStringLiteral("Esc"), QStringLiteral("关闭"), QString());
+    hintLayout->addStretch(1);
 
     root->addLayout(topBar);
     root->addWidget(m_list, 1);
     root->addWidget(m_markBar, 0);
-    root->addWidget(m_hint, 0);
+    root->addWidget(hintBar, 0);
 }
 
 void MainWindow::onThumbnailHeightChanged(int height)
@@ -330,8 +376,14 @@ void MainWindow::updateHeader()
     if (!m_header || !m_storage)
         return;
 
-    if (m_storage->isEmpty()) {
-        m_header->setText(QStringLiteral("剪切板历史 · 空空如也"));
+    const bool empty = m_storage->isEmpty();
+
+    // 空列表不再只留一行小字，铺一句居中的引导
+    if (m_emptyLabel)
+        m_emptyLabel->setVisible(empty);
+
+    if (empty) {
+        m_header->setText(QStringLiteral("剪切板历史"));
         return;
     }
 
@@ -510,10 +562,14 @@ void MainWindow::onContextMenu(const QPoint &pos)
     }
 
     const bool marked = m_marked.contains(id);
+    const bool isImage = row->data(ClipboardRoles::TypeRole).toInt() == ClipboardItem::Image;
 
     QMenu menu(this);
     // QSS 的 item padding 对菜单宽度的影响不总是可靠，这里再兜一个最小宽度
     menu.setMinimumWidth(170);
+    QAction *floatAction = nullptr;
+    if (isImage)
+        floatAction = menu.addAction(QStringLiteral("浮动到桌面"));
     QAction *markAction = menu.addAction(marked ? QStringLiteral("取消勾选")
                                                 : QStringLiteral("勾选（用于批量删除）"));
     QAction *pinAction = menu.addAction(pinned ? QStringLiteral("取消置顶")
@@ -527,7 +583,9 @@ void MainWindow::onContextMenu(const QPoint &pos)
     if (!chosen)
         return;
 
-    if (chosen == markAction)
+    if (floatAction && chosen == floatAction)
+        emit imageFloatRequested(id);
+    else if (chosen == markAction)
         toggleMark(id);
     else if (chosen == pinAction)
         togglePinCurrentRow();
@@ -616,14 +674,15 @@ void MainWindow::paintEvent(QPaintEvent *event)
     const int alpha = qBound(0, opacity * 255 / 100, 255);
 
     QColor fill = m_darkTheme ? QColor(0x1c, 0x21, 0x28) : QColor(0xf9, 0xfa, 0xfb);
-    QColor stroke = m_darkTheme ? QColor(0x30, 0x36, 0x3d) : QColor(0xd0, 0xd7, 0xde);
+    // 描边比内部用的分隔线深一档：不透明的无边框窗口没有阴影，
+    // 边框不够重的话整块会糊在桌面里看不出边界。
+    QColor stroke = m_darkTheme ? QColor(0x3d, 0x44, 0x4d) : QColor(0xb9, 0xc4, 0xd0);
     fill.setAlpha(alpha);
     stroke.setAlpha(alpha);
 
     QPainter painter(this);
     painter.fillRect(rect(), fill);
 
-    // 一像素边框：不透明的无边框窗口不画边，边界会糊在桌面里看不出来
     painter.setPen(stroke);
     painter.setBrush(Qt::NoBrush);
     painter.drawRect(rect().adjusted(0, 0, -1, -1));
@@ -707,6 +766,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // 在列表上也能拖窗口：拖动超过阈值就移动，否则照旧算点击
     if (m_list && watched == m_list->viewport()) {
         switch (event->type()) {
+        case QEvent::Resize:
+            // 空列表的引导要一直铺满整个列表区，所以得跟着 viewport 改大小
+            if (m_emptyLabel)
+                m_emptyLabel->setGeometry(m_list->viewport()->rect());
+            break;
         case QEvent::MouseButtonPress: {
             auto *mouseEvent = static_cast<QMouseEvent *>(event);
             if (mouseEvent->button() == Qt::LeftButton)

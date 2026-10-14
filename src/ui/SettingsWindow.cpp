@@ -22,8 +22,8 @@
 
 namespace {
 
-const int kMinThumbnail = 24;
-const int kMaxThumbnail = 256;
+const int kMinThumbnail = 40;
+const int kMaxThumbnail = 400;
 const int kMinMaxItems = 20;
 const int kMaxMaxItems = 1000;
 const int kMinListWidth = 420;
@@ -41,8 +41,9 @@ SettingsWindow::SettingsWindow(SettingsStore *settings, StorageManager *storage,
     setObjectName(QStringLiteral("SettingsWindow"));
     setAttribute(Qt::WA_StyledBackground, true);
     setWindowTitle(QStringLiteral("设置 - 剪切板历史"));
-    setMinimumWidth(460);
-    resize(480, 520);
+    // 横屏：两列并排，整体做得宽而扁，不用一直往下滚
+    setMinimumSize(720, 400);
+    resize(820, 470);
 
     buildUi();
     reloadFromSettings();
@@ -86,8 +87,10 @@ void SettingsWindow::buildUi()
 
     m_thumbnailSpin = new QSpinBox(appearanceBox);
     m_thumbnailSpin->setRange(kMinThumbnail, kMaxThumbnail);
-    m_thumbnailSpin->setSingleStep(8);
+    m_thumbnailSpin->setSingleStep(10);
     m_thumbnailSpin->setSuffix(QStringLiteral(" px"));
+    m_thumbnailSpin->setToolTip(
+            QStringLiteral("图片行的预览高度上限。行高按图片自身尺寸的 1/8 算，再夹在这个上限以内。"));
     connect(m_thumbnailSpin, &QSpinBox::valueChanged,
             this, &SettingsWindow::onThumbnailHeightChanged);
 
@@ -113,8 +116,16 @@ void SettingsWindow::buildUi()
     connect(m_opacitySpin, &QSpinBox::valueChanged,
             this, &SettingsWindow::onBackgroundOpacityChanged);
 
+    // 横屏之后每一列都不宽，输入控件别拉满整列，不然一列里控件宽度参差不齐
+    const int inputWidth = 150;
+    m_themeCombo->setMaximumWidth(inputWidth);
+    m_thumbnailSpin->setMaximumWidth(inputWidth);
+    m_listWidthSpin->setMaximumWidth(inputWidth);
+    m_listHeightSpin->setMaximumWidth(inputWidth);
+    m_opacitySpin->setMaximumWidth(inputWidth);
+
     appearanceForm->addRow(QStringLiteral("主题"), m_themeCombo);
-    appearanceForm->addRow(QStringLiteral("图片缩略图高度"), m_thumbnailSpin);
+    appearanceForm->addRow(QStringLiteral("图片预览最大高度"), m_thumbnailSpin);
     appearanceForm->addRow(QStringLiteral("列表窗口宽度"), m_listWidthSpin);
     appearanceForm->addRow(QStringLiteral("列表窗口高度"), m_listHeightSpin);
     appearanceForm->addRow(QStringLiteral("背景不透明度"), m_opacitySpin);
@@ -128,8 +139,6 @@ void SettingsWindow::buildUi()
     appearanceHint->setWordWrap(true);
     appearanceForm->addRow(QString(), appearanceHint);
 
-    root->addWidget(appearanceBox);
-
     /* ---------------- 行为 ---------------- */
     auto *behaviorBox = new QGroupBox(QStringLiteral("行为"), this);
     auto *behaviorForm = new QFormLayout(behaviorBox);
@@ -140,6 +149,7 @@ void SettingsWindow::buildUi()
 
     m_hotkeyEdit = new QKeySequenceEdit(behaviorBox);
     m_hotkeyEdit->setMaximumSequenceLength(1);
+    m_hotkeyEdit->setMaximumWidth(240);
     connect(m_hotkeyEdit, &QKeySequenceEdit::editingFinished,
             this, &SettingsWindow::onHotkeyEditingFinished);
 
@@ -163,8 +173,6 @@ void SettingsWindow::buildUi()
     behaviorHint->setWordWrap(true);
     behaviorForm->addRow(QString(), behaviorHint);
 
-    root->addWidget(behaviorBox);
-
     /* ---------------- 存储 ---------------- */
     auto *storageBox = new QGroupBox(QStringLiteral("存储"), this);
     auto *storageLayout = new QVBoxLayout(storageBox);
@@ -179,6 +187,7 @@ void SettingsWindow::buildUi()
     m_maxItemsSpin->setRange(kMinMaxItems, kMaxMaxItems);
     m_maxItemsSpin->setSingleStep(50);
     m_maxItemsSpin->setSuffix(QStringLiteral(" 条"));
+    m_maxItemsSpin->setMaximumWidth(150);
     connect(m_maxItemsSpin, &QSpinBox::valueChanged,
             this, &SettingsWindow::onMaxItemsChanged);
 
@@ -188,6 +197,8 @@ void SettingsWindow::buildUi()
     m_storageSummary = new QLabel(storageBox);
     m_storageSummary->setObjectName(QStringLiteral("SectionHint"));
     m_storageSummary->setWordWrap(true);
+    // 数据目录路径挺长的，允许选中复制
+    m_storageSummary->setTextInteractionFlags(Qt::TextSelectableByMouse);
     storageLayout->addWidget(m_storageSummary);
 
     auto *storageHint = new QLabel(
@@ -213,7 +224,29 @@ void SettingsWindow::buildUi()
     buttonRow->addStretch(1);
     storageLayout->addLayout(buttonRow);
 
-    root->addWidget(storageBox);
+    /* ---------------- 组装成横屏两列 ----------------
+     * 左列放「外观」（5 行，最高）；
+     * 右列把「行为」和「存储」上下叠起来，两边高度正好差不多，
+     * 不会出现一边空一大片。
+     */
+    auto *rightColumn = new QWidget(this);
+    auto *rightLayout = new QVBoxLayout(rightColumn);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+    rightLayout->setSpacing(12);
+    rightLayout->addWidget(behaviorBox, 0);
+    rightLayout->addWidget(storageBox, 0);
+    rightLayout->addStretch(1);
+
+    // 给两列一个相同的最小宽度，免得某一列被自己的内容撑窄了
+    appearanceBox->setMinimumWidth(330);
+    rightColumn->setMinimumWidth(330);
+
+    auto *columns = new QHBoxLayout;
+    columns->setSpacing(12);
+    columns->addWidget(appearanceBox, 1);
+    columns->addWidget(rightColumn, 1);
+
+    root->addLayout(columns, 0);
     root->addStretch(1);
 }
 

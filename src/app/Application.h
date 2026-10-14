@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QIcon>
 #include <QObject>
 #include <QString>
@@ -14,6 +15,7 @@ class QAction;
 
 class ClipboardMonitor;
 class GlobalHotkey;
+class ImageFloatWindow;
 class MainWindow;
 class SettingsWindow;
 class SettingsStore;
@@ -47,11 +49,17 @@ private slots:
 
     void onItemActivated(qint64 id);
 
+    /*! 把某张图片钉到桌面上（已经浮着就置顶，不重复开）。 */
+    void onImageFloatRequested(qint64 id);
+    void onFloatClosed(qint64 itemId);
+    void closeAllFloats();
+
     void showListWindow();
     void showSettingsWindow();
     void openDataDirectory();
 
     void onMaxItemsChanged(int value);
+    void onThemeChanged(SettingsStore::Theme theme);
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
 
 private:
@@ -76,10 +84,14 @@ private:
     MainWindow *m_listWindow = nullptr;
     SettingsWindow *m_settingsWindow = nullptr;
 
+    /*! 钉在桌面上的图片浮窗，按记录 id 索引。可以同时浮多张。 */
+    QHash<qint64, ImageFloatWindow *> m_floats;
+
     QSystemTrayIcon *m_tray = nullptr;
     QMenu *m_trayMenu = nullptr;
     QAction *m_showListAction = nullptr;
     QAction *m_settingsAction = nullptr;
+    QAction *m_closeFloatsAction = nullptr;
     QAction *m_dataDirAction = nullptr;
     QAction *m_quitAction = nullptr;
 

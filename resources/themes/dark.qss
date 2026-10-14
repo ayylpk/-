@@ -32,13 +32,32 @@ QLabel#SectionHint {
 #ListHeader {
     color: #8b949e;
     font-size: 12px;
-    padding: 8px 12px 4px 12px;
+    padding: 8px 12px 6px 12px;
 }
 
-#ListHint {
-    color: #6e7681;
+/* 底部键帽式提示 */
+#HintBar {
+    background-color: transparent;
+}
+
+#KeyCap {
+    background-color: #262c34;
+    border: 1px solid #3d444d;
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #c9d1d9;
     font-size: 11px;
-    padding: 4px 12px 8px 12px;
+}
+
+#KeyDesc {
+    color: #8b949e;
+    font-size: 11px;
+}
+
+/* 列表为空时铺的引导 */
+#EmptyHint {
+    color: #6e7681;
+    font-size: 13px;
 }
 
 #HistoryList {
@@ -47,15 +66,17 @@ QLabel#SectionHint {
     outline: none;
 }
 
+/* 行内留白由 delegate 自己算，这里别再叠加 padding */
 #HistoryList::item {
-    padding: 6px 10px;
+    padding: 0px;
     border-radius: 6px;
     border: 1px solid transparent;
     color: #e6edf3;
 }
 
+/* hover 要跟窗口底色 #1c2128 拉开距离，否则看不出鼠标停在哪一行 */
 #HistoryList::item:hover {
-    background-color: #262c34;
+    background-color: #2b323b;
 }
 
 #HistoryList::item:selected {

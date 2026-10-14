@@ -10,7 +10,10 @@ const char *kKeyTheme = "appearance/theme";
 const char *kKeyMaxItems = "history/maxItems";
 const char *kKeyHotkey = "hotkey/sequence";
 const char *kKeyPasteOnClick = "interaction/pasteOnClick";
-const char *kKeyThumbnailHeight = "appearance/thumbnailHeight";
+// 注意：键名从 appearance/thumbnailHeight 改成了 appearance/imageMaxHeight。
+// 语义变了（从"固定高度"变成"最大高度上限"），换个 key 让新默认值一定生效，
+// 不然已经跑过的机器上会留着旧的 48，看起来像没改。
+const char *kKeyThumbnailHeight = "appearance/imageMaxHeight";
 const char *kKeyListWidth = "window/listWidth";
 const char *kKeyListHeight = "window/listHeight";
 const char *kKeyBackgroundOpacity = "window/backgroundOpacity";
@@ -19,9 +22,11 @@ const int kMinMaxItems = 20;
 const int kMaxMaxItems = 1000;
 const int kDefaultMaxItems = 200;
 
-const int kMinThumbnail = 24;
-const int kMaxThumbnail = 256;
-const int kDefaultThumbnail = 48;
+// 图片预览的最大高度。行高按图片自身尺寸的 1/8 算，再夹在这个上限之内 ——
+// 所以这个值不是"固定高度"，而是"最大能到多高"。
+const int kMinThumbnail = 40;
+const int kMaxThumbnail = 400;
+const int kDefaultThumbnail = 180;
 
 const int kMinListWidth = 420;
 const int kMaxListWidth = 1600;

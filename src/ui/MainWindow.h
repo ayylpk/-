@@ -39,6 +39,8 @@ public:
 signals:
     /*! 用户选中了某条，交给 Application 去写剪切板 + 模拟粘贴。 */
     void itemActivated(qint64 id);
+    /*! 要把这张图片钉到桌面上（只有图片行会给这个选项）。 */
+    void imageFloatRequested(qint64 id);
     void settingsRequested();
     void dataDirRequested();
 
@@ -100,7 +102,8 @@ private:
     QLabel *m_markLabel = nullptr;
     QPushButton *m_clearMarksButton = nullptr;
     QPushButton *m_deleteMarkedButton = nullptr;
-    QLabel *m_hint = nullptr;
+    /*! 列表为空时铺在列表上面的一句引导。 */
+    QLabel *m_emptyLabel = nullptr;
 
     /*! 勾选中、等着被批量删掉的 id。删完即清空。 */
     QVector<qint64> m_marked;
